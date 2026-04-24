@@ -1,4 +1,5 @@
 ﻿using FakeHTTPServer.DataAccess;
+using FakeHTTPServer.Dto;
 using FakeHTTPServer.Entities;
 using FakeHTTPServer.Repository;
 using System.Net;
@@ -54,10 +55,51 @@ public static class Router
         StepDBContext context = new StepDBContext();
         ProductRepository repo = new ProductRepository(context);
 
-        if(request.Method=="GET" && request.Path == "/products")
+        if (request.Method == "GET" && request.Path == "/products")
         {
             var products = await repo.GetAllAsync();
             return HttpResponse.Parse(products);
+        }
+
+        if (request.Method == "GET" && request.Path.StartsWith("/products/")) //   /products/2
+        {
+            var idText = request.Path.Replace("/products/", "");//2
+
+            if (!int.TryParse(idText, out var id))
+            {
+                return HttpResponse.Parse(new { message = "Invalid product id" });
+            }
+
+            var product = await repo.GetAsync(int.Parse(idText));
+            if (product is null)
+            {
+                return HttpResponse.Parse(new { message = "Product not found" });
+            }
+
+            return HttpResponse.Parse(product);
+        }
+
+        if (request.Method == "POST" && request.Path == "/products" && request.Body != "")
+        {
+            var dto = JsonSerializer.Deserialize<ProductCreateDto>(request.Body, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (dto is null || string.IsNullOrEmpty(dto.Name))
+            {
+                return HttpResponse.Parse(new { message = "Invalid product data" });
+            }
+
+            var product = new Product
+            {
+                Name = dto.Name,
+                Price = dto.Price
+            };
+
+            await repo.AddAsync(product);
+
+            return HttpResponse.Parse(product);
         }
 
         return HttpResponse.Parse(null);
@@ -85,7 +127,7 @@ public class HttpRequest
         {
             Method = parts[0].Trim().ToUpper(),
             Path = parts[1].Trim(),
-            Body=body.Trim()
+            Body = body.Trim()
         };
         // POST
         // /products
@@ -95,9 +137,9 @@ public class HttpRequest
 
 public static class HttpResponse
 {
-    public static string Parse(List<Product> products)
+    public static string Parse(object? data)
     {
-        return JsonSerializer.Serialize(products, new JsonSerializerOptions
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions
         {
             WriteIndented = true
         });
